@@ -1,0 +1,33 @@
+name: Publicar atualização Book Poda
+on:
+  push:
+    tags:
+      - 'v*'
+permissions:
+  contents: write
+jobs:
+  publicar:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Conferir versão e gerar pacote
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import json,os
+          from pathlib import Path
+          version=json.loads(Path('version.json').read_text())['version']
+          assert 'v'+version == os.environ['RELEASE_TAG'], 'A tag e version.json precisam coincidir.'
+          PY
+          python tools/gerar_release.py
+      - name: Publicar pacote no GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          gh release view "$RELEASE_TAG" >/dev/null 2>&1 || gh release create "$RELEASE_TAG" --title "Book Poda $RELEASE_TAG" --notes "Atualização do Book Poda Localhost. Preserve Dados, Books e Bases QField."
+          gh release upload "$RELEASE_TAG" dist/book-poda-update.zip dist/book-poda-update.zip.sha256 --clobber

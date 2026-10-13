@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Book Poda • Mapa QField v12.1</title>
+<style>
+  html,body,#map{width:100%;height:100%;margin:0;overflow:hidden;font-family:Segoe UI,system-ui,Arial,sans-serif}
+  #map{position:relative;touch-action:none;cursor:grab;user-select:none;background:#e6ebf1}
+  #map.is-dragging{cursor:grabbing}
+  #raster{position:absolute;inset:0;overflow:hidden;pointer-events:none}
+  .raster-tile{position:absolute;display:block;max-width:none;pointer-events:none;user-select:none;image-rendering:auto}
+  #features{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+  #search-pin{display:none;position:absolute;z-index:3;pointer-events:none;transform:translate(-50%,-100%)}
+  #search-pin:before{content:"";display:block;width:18px;height:18px;background:#2e86ff;border:3px solid white;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 2px 10px #102a4399}
+  #search-pin:after{content:"";position:absolute;top:7px;left:8px;width:7px;height:7px;border-radius:50%;background:white}
+  #tooltip{position:absolute;z-index:5;display:none;pointer-events:none;max-width:270px;white-space:pre-line;background:#fff;color:#192638;padding:9px 11px;border:1px solid #d0d5dd;border-radius:8px;box-shadow:0 4px 16px #10182830;font-size:12px;line-height:1.5}
+  #control{position:absolute;z-index:7;top:12px;left:12px;display:flex;flex-direction:column;gap:4px}
+  #control button{background:#fff;border:1px solid #c6cbd3;width:35px;height:35px;border-radius:7px;box-shadow:0 1px 5px #0002;font-size:20px;font-weight:700;cursor:pointer}
+  #control button:hover{background:#edf2f7}
+  #clear-marker{position:absolute;z-index:6;top:12px;right:12px;display:none;border:1px solid #bfcedf;border-radius:7px;background:#fff;color:#344054;box-shadow:0 1px 5px #0002;padding:7px 10px;font-size:12px;cursor:pointer}
+  #map-status{position:absolute;z-index:6;bottom:12px;left:12px;font:11px Segoe UI,system-ui;background:#ffffffeb;border:1px solid #d7dee7;padding:6px 9px;border-radius:6px;color:#344054;pointer-events:none;max-width:65%}
+  #scale{position:absolute;right:10px;bottom:10px;font:11px Segoe UI,system-ui;color:#344054;background:#ffffffbb;border-radius:4px;padding:3px 6px;pointer-events:none}
+</style>
+</head>
+<body>
+<div id="map" tabindex="0" aria-label="Mapa QField: arraste para navegar e use Delete para apagar o marcador pesquisado">
+  <div id="raster"></div><canvas id="features"></canvas><div id="search-pin"></div>
+  <div id="tooltip"></div>
+  <div id="control"><button id="zoom-in" title="Aproximar">+</button><button id="zoom-out" title="Afastar">−</button></div>
+  <button id="clear-marker" title="Remover marcador de pesquisa (Del)">Remover marcação · Del</button>
+  <div id="map-status">Carregando QField…</div><div id="scale">QField • consulta</div>
+</div>
+<script src="qfield_manifest.js"></script>
+
+<script src="map_v11.js?v=121"></script>
+</body></html>
