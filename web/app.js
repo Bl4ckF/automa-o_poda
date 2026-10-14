@@ -1,7 +1,7 @@
 'use strict';
 const $=id=>document.getElementById(id);
-const state={os:'',date:'',qtd:'',bookType:'poda',unit:'m2',records:[],settings:{},photo:{antes:'',depois:''},activeSide:'antes',mapSelected:null,editing:-1,loading:false};
-let draftTimer=null,noticeTimer=null,mapReady=false,osRows=[];
+const state={os:'',date:'',qtd:'',bookType:'poda',unit:'m2',records:[],settings:{},photo:{antes:'',depois:''},activeSide:'antes',mapSelected:null,editing:-1,loading:false,materials:[],editingBookId:null,selectedMaterial:null};
+let draftTimer=null,noticeTimer=null,mapReady=false,osRows=[];let osMarkers={types:[],marks:{}};let editingMarkerKey=null,materialTimer=null;
 const pageTitles={book:'Novo Book fotográfico',map:'Mapa QField',history:'Registros de Books',os:'Ordens de Serviço',settings:'Configurações'};
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 async function api(url,options={}){
@@ -25,7 +25,7 @@ function dateFormatting(text){let digits=String(text).replace(/\D/g,'').slice(0,
 const serviceNames={poda:'Poda',limpeza_faixa:'Limpeza de Faixa'};
 const serviceTeams={poda:'ENG PDCG02',limpeza_faixa:'ENG LFCG02'};
 const unitSymbols={m2:'m²',km:'km'};
-function getForm(){return {book_type:state.bookType,unit:state.bookType==='limpeza_faixa'?state.unit:'un',os:$('book-os').value.trim(),date:$('book-date').value.trim(),qtd:$('book-qtd').value,records:state.records};}
+function getForm(){return {book_type:state.bookType,unit:state.bookType==='limpeza_faixa'?state.unit:'un',os:$('book-os').value.trim(),date:$('book-date').value.trim(),qtd:$('book-qtd').value,records:state.records,materials:state.materials,editing_id:state.editingBookId};}
 function decimalNumber(text){
  let t=String(text||'').trim().replace(/\s/g,'');
  if(t.includes(',')&&t.includes('.'))t=t.lastIndexOf(',')>t.lastIndexOf('.')?t.replace(/\./g,'').replace(',','.'):t.replace(/,/g,'');
@@ -36,7 +36,7 @@ function measureText(v){const n=decimalNumber(v);return Number.isFinite(n)?n.toL
 function updateBookTypeUI(){
  const faixa=state.bookType==='limpeza_faixa';
  $('book-type').value=state.bookType;
- $('book-os-prefix').textContent=state.bookType==='limpeza_faixa'?((state.settings&&state.settings.os_prefix_faixa)||'OS'):((state.settings&&state.settings.os_prefix)||'ENG-PDBT02.CMAD');
+ $('book-os-prefix').textContent=state.bookType==='limpeza_faixa'?((state.settings&&state.settings.os_prefix_faixa)||'ENG-LFBT02.CMAD'):((state.settings&&state.settings.os_prefix)||'ENG-PDBT02.CMAD');
  $('book-unit').classList.toggle('hidden',!faixa);$('book-unit').value=state.unit;
  $('book-team').textContent=serviceTeams[state.bookType];
  $('service-header').textContent='ENGELMIG ENERGIA / '+(faixa?'LIMPEZA DE FAIXA':'PODA');
@@ -60,8 +60,8 @@ function changeBookType(next){
  if((state.records.length||$('book-os').value.trim())&&!confirm('Trocar o tipo de serviço descarta o Book em edição. Os Books já gerados permanecem no histórico. Continuar?')){
    $('book-type').value=state.bookType;return;
  }
- state.bookType=next;state.records=[];$('book-os').value='';$('book-qtd').value='';
- clearRecordFields();updateBookTypeUI();scheduleDraft();
+ state.bookType=next;state.records=[];state.materials=[];state.editingBookId=null;$('book-os').value='';$('book-qtd').value='';renderMaterials();
+ clearRecordFields();updateBookTypeUI();refreshEditBanner();scheduleDraft();
 }
 function syncFaixaTotal(){
  if(state.bookType!=='limpeza_faixa')return;
@@ -75,7 +75,9 @@ function applyDraft(d){
   state.bookType=d.book_type==='limpeza_faixa'?'limpeza_faixa':'poda';state.unit=d.unit==='km'?'km':'m2';
   $('book-os').value=d.os||'';$('book-date').value=d.date||today();$('book-qtd').value=d.qtd||'';
   state.records=Array.isArray(d.records)?d.records:[];
-  updateBookTypeUI();
+  state.materials=Array.isArray(d.materials)?d.materials:[];
+  state.editingBookId=d.editing_id||null;
+  updateBookTypeUI();renderMaterials();refreshEditBanner();
 }
 function clearRecordFields(){
   for(const field of ['coord','td','rd','bairro','rua','measure'])$('rec-'+field).value='';
@@ -147,13 +149,14 @@ async function generate(){
   const data=getForm();let btn=$('generate-pdf');btn.disabled=true;btn.textContent='Gerando PDF...';
   try{
     clearTimeout(draftTimer);
-    const result=await api('/api/books/generate',{method:'POST',body:JSON.stringify(data)});
+    const endpoint=state.editingBookId?`/api/books/${state.editingBookId}/edit`:'/api/books/generate';
+    const result=await api(endpoint,{method:'POST',body:JSON.stringify(data)});
     // O backend grava o histórico antes de apagar o rascunho.
     applyDraft({book_type:state.bookType,unit:state.unit,date:today(),records:[]});clearRecordFields();
-    toast(`PDF gerado e salvo!\n${result.folder}\n${result.filename}\nO novo Book está vazio e os anteriores continuam no histórico.`);
+    toast(`PDF salvo!\n${result.folder}\n${result.filename}${result.backup?'\nVersão anterior guardada: '+result.backup:''}\nO próximo Book está vazio.`);
     const win=window.open(result.pdf_url,'_blank');if(!win)console.info('PDF salvo:',result.pdf_url);
   }catch(e){toast(e.message,true);scheduleDraft()}
-  finally{btn.disabled=false;btn.textContent='Gerar PDF e salvar Book'}
+  finally{btn.disabled=false;refreshEditBanner()}
 }
 async function lookup(){
   const q=$('rec-coord').value.trim();if(!q)return toast('Digite uma coordenada.',true);
@@ -167,37 +170,137 @@ async function lookup(){
 async function loadHistory(){
   const q=$('history-filter').value.trim();let body=$('history-body');
   try{const result=await api('/api/books?q='+encodeURIComponent(q));
-    body.innerHTML=result.rows.length?result.rows.map(r=>`<tr><td><b>${r.tipo==='limpeza_faixa'?'Limpeza de Faixa':'Poda'}</b><small class="history-team">${r.tipo==='limpeza_faixa'?'ENG LFCG02':'ENG PDCG02'}</small></td><td><b>${esc(r.os)}</b></td><td>${esc(r.data)}</td><td>${r.tipo==='limpeza_faixa'?esc(Number(r.qtd).toLocaleString('pt-BR',{maximumFractionDigits:4}))+' '+(r.unidade==='km'?'km':'m²'):esc(Number(r.qtd))+' podas'}</td><td class="file-cell">${esc(r.filename)}</td><td>${esc(r.created)}</td><td><div class="actions-cell"><a href="/api/books/${r.id}/pdf" target="_blank" class="button soft">Abrir PDF</a><button class="button ghost folder" data-id="${r.id}">Abrir pasta</button></div></td></tr>`).join(''):'<tr><td colspan="7" class="empty">Nenhum registro encontrado.</td></tr>';
+    body.innerHTML=result.rows.length?result.rows.map(r=>`<tr><td><b>${r.tipo==='limpeza_faixa'?'Limpeza de Faixa':'Poda'}</b><small class="history-team">${r.tipo==='limpeza_faixa'?'ENG LFCG02':'ENG PDCG02'}</small></td><td><b>${esc(r.os)}</b></td><td>${esc(r.data)}</td><td>${r.tipo==='limpeza_faixa'?esc(Number(r.qtd).toLocaleString('pt-BR',{maximumFractionDigits:4}))+' '+(r.unidade==='km'?'km':'m²'):esc(Number(r.qtd))+' podas'}</td><td class="file-cell">${esc(r.filename)}</td><td>${esc(r.created)}</td><td><div class="actions-cell"><a href="/api/books/${r.id}/pdf" target="_blank" class="button soft">Abrir PDF</a><button class="button primary edit-saved-book" data-id="${r.id}" type="button">Editar</button><button class="button ghost folder" data-id="${r.id}">Abrir pasta</button></div></td></tr>`).join(''):'<tr><td colspan="7" class="empty">Nenhum registro encontrado.</td></tr>';
+    body.querySelectorAll('.edit-saved-book').forEach(b=>b.onclick=()=>editSavedBook(+b.dataset.id));
     body.querySelectorAll('.folder').forEach(b=>b.onclick=async()=>{try{const data=await api(`/api/books/${b.dataset.id}/open_folder`,{method:'POST',body:'{}'});if(data.message)toast(data.message+'\n'+data.folder)}catch(e){toast(e.message,true)}});
   }catch(e){toast(e.message,true)}
+}
+function refreshEditBanner(){
+  const editing=!!state.editingBookId;
+  $('book-edit-banner').classList.toggle('hidden',!editing);
+  $('generate-pdf').textContent=editing?'Salvar correções e substituir PDF':'Gerar PDF e salvar Book';
+}
+async function editSavedBook(id){
+  if((state.records.length||state.materials.length||$('book-os').value.trim())&&!confirm('Abrir Book antigo para edição? Seu Book em andamento será substituído no formulário (não no histórico).'))return;
+  try{
+    const b=await api('/api/books/'+id);
+    if(b.payload?.legacy)throw Error('Registro importado sem fotos editáveis.');
+    const d={...b.payload,book_type:b.tipo||b.payload.book_type,unit:b.unidade||b.payload.unit,
+      editing_id:id,date:b.data,os:b.os,
+      records:(b.payload.records||[]).map((r,i)=>({...r,antes:`/api/books/${id}/photo/${i}/antes`,depois:`/api/books/${id}/photo/${i}/depois`}))};
+    clearTimeout(draftTimer);applyDraft(d);clearRecordFields();tab('book');scheduleDraft();
+    toast('Book '+b.os+' aberto para edição. O PDF anterior será preservado em HistoricoEdicoes.');
+  }catch(e){toast(e.message,true)}
+}
+function renderMaterials(){
+  if(!$('materials-count'))return;
+  $('materials-count').textContent=state.materials.length;
+  const el=$('material-selected');
+  if(!state.materials.length){el.innerHTML='<div class="empty">Nenhum material neste Book.</div>';return}
+  el.innerHTML='<table class="material-table"><thead><tr><th>Código</th><th>Descrição</th><th>Un.</th><th>Qtd.</th><th>Ação</th></tr></thead><tbody>'+
+    state.materials.map((m,i)=>`<tr><td>${esc(m.code)}</td><td>${esc(m.description)}</td><td>${esc(m.unit)}</td><td>${esc(m.qty)}</td><td><button class="button minimal remove-material" data-i="${i}">Excluir</button></td></tr>`).join('')+'</tbody></table>';
+  el.querySelectorAll('.remove-material').forEach(b=>b.onclick=()=>{state.materials.splice(+b.dataset.i,1);renderMaterials();scheduleDraft()});
+}
+async function searchMaterials(){
+  const q=$('material-search').value.trim();state.selectedMaterial=null;
+  if(!q){$('material-suggestions').classList.add('hidden');return}
+  try{
+    const r=await api('/api/materials?q='+encodeURIComponent(q));
+    const el=$('material-suggestions');el.classList.remove('hidden');
+    el.innerHTML=r.rows.length?r.rows.slice(0,35).map((m,i)=>`<button type="button" class="material-option" data-i="${i}"><b>${esc(m.code)}</b>${esc(m.description)} <small>${esc(m.unit||'Unidade não cadastrada')}</small></button>`).join(''):'<div class="empty">Material não encontrado.</div>';
+    el.querySelectorAll('.material-option').forEach(b=>b.onclick=()=>{
+      const m=r.rows[+b.dataset.i];state.selectedMaterial=m;
+      $('material-search').value=m.code+' - '+m.description;
+      $('material-unit').value=m.unit||'';
+      el.classList.add('hidden');$('material-qty').focus();
+    });
+  }catch(e){toast(e.message,true)}
+}
+function addMaterial(){
+  const m=state.selectedMaterial;if(!m)return toast('Selecione um material encontrado na pesquisa.',true);
+  const qty=decimalNumber($('material-qty').value);const unit=$('material-unit').value.trim().toUpperCase();
+  if(!Number.isFinite(qty)||qty<=0)return toast('Informe quantidade maior que zero.',true);
+  if(!unit)return toast('Informe a unidade deste material.',true);
+  state.materials.push({code:m.code,description:m.description,unit,qty:String(qty)});
+  $('material-search').value='';$('material-qty').value='';$('material-unit').value='';state.selectedMaterial=null;
+  $('material-suggestions').classList.add('hidden');renderMaterials();scheduleDraft();toast('Material adicionado.');
+}
+async function createMarker(){
+  const name=$('marker-name').value.trim(),color=$('marker-color').value;
+  if(!name)return toast('Informe o nome do marcador.',true);
+  const key=editingMarkerKey||('m'+Date.now().toString(36));
+  try{
+    osMarkers=await api('/api/os/marker_type',{method:'POST',body:JSON.stringify({key,label:name,color})});
+    editingMarkerKey=null;$('marker-name').value='';$('marker-create').textContent='Criar marcador';
+    drawMarkerLegend();renderOSRows();toast('Marcador salvo.');
+  }catch(e){toast(e.message,true)}
+}
+async function loadMarkers(){
+  osMarkers=await api('/api/os/markers');drawMarkerLegend();
+}
+function markerStyle(key){
+  const type=osMarkers.types.find(x=>x.key===key);return type?`background:${type.color}32; border:1px solid ${type.color}77`:'';
+}
+function drawMarkerLegend(){
+  $('os-legend').innerHTML=osMarkers.types.map(t=>`<span class="os-legend-entry" style="background:${esc(t.color)}30;border:1px solid ${esc(t.color)}55"><b>${esc(t.label)}</b><button class="marker-edit" type="button" data-key="${esc(t.key)}" title="Editar">✎</button>${t.key!=='ok'?`<button class="marker-delete" type="button" data-key="${esc(t.key)}" title="Excluir">×</button>`:''}</span>`).join('');
+  $('os-legend').querySelectorAll('.marker-edit').forEach(b=>b.onclick=()=>{
+    const t=osMarkers.types.find(x=>x.key===b.dataset.key);editingMarkerKey=t.key;
+    $('marker-name').value=t.label;$('marker-color').value=t.color;$('marker-create').textContent='Salvar marcador';
+  });
+  $('os-legend').querySelectorAll('.marker-delete').forEach(b=>b.onclick=async()=>{
+    const key=b.dataset.key;if(!confirm('Excluir este marcador e retirar sua cor das OS?'))return;
+    try{osMarkers=await api('/api/os/marker_type',{method:'POST',body:JSON.stringify({action:'delete',key})});drawMarkerLegend();renderOSRows();}catch(e){toast(e.message,true)}
+  });
+}
+function renderOSRows(){
+  $('os-body').innerHTML=osRows.length?osRows.map((r,i)=>{
+    const key=osMarkers.marks[r.os]||'';
+    const style=markerStyle(key);
+    return `<tr><td><div class="os-marker-cell"><span class="os-number" style="${style}">${esc(r.os)}</span><select class="os-status-picker" data-i="${i}" aria-label="Cor da OS ${esc(r.os)}"><option value="">Sem marcador</option>${osMarkers.types.map(t=>`<option value="${esc(t.key)}" ${t.key===key?'selected':''}>${esc(t.label)}</option>`).join('')}</select></div></td><td>${r['21307']}</td><td>${r['21308']}</td><td><b>${r.total}</b></td><td><button class="button soft select-os" data-index="${i}">Usar no Book</button></td></tr>`
+  }).join(''):'<tr><td colspan="5" class="empty">Nenhuma OS com códigos 21307 e 21308.</td></tr>';
+  document.querySelectorAll('.os-status-picker').forEach(e=>e.onchange=async()=>{
+    const r=osRows[+e.dataset.i];try{await saveOSMark(r.os,e.value);renderOSRows()}catch(ex){toast(ex.message,true);renderOSRows()}
+  });
+  document.querySelectorAll('.select-os').forEach(b=>b.onclick=async()=>{
+    const r=osRows[+b.dataset.index];
+    if(state.editingBookId){
+      if(!confirm('Você está editando um Book existente. Usar esta OS inicia um Book novo e descarta as alterações não salvas. Continuar?'))return;
+      state.editingBookId=null;state.records=[];state.materials=[];renderMaterials();refreshEditBanner();
+    }
+    if(state.bookType==='limpeza_faixa'){
+      if(state.records.length&&!confirm('As OS da planilha são de Poda. Trocar para Poda e descartar os trechos em edição?'))return;
+      state.bookType='poda';state.records=[];clearRecordFields();updateBookTypeUI();
+    }
+    if(state.records.length&&!confirm('Substituir a OS e a quantidade atual sem excluir as podas já adicionadas?'))return;
+    $('book-os').value=String(r.os).split('/')[0].trim();$('book-qtd').value=r.total;
+    try{await saveOSMark(r.os,'ok')}catch(e){toast('OS selecionada, mas o marcador OK não foi salvo: '+e.message,true)}
+    renderOSRows();tab('book');scheduleDraft();toast(`OS ${r.os} selecionada. Marcador: OK. Quantidade: ${r.total}.`);
+  });
+}
+async function saveOSMark(os,key){
+  const r=await api('/api/os/marker',{method:'POST',body:JSON.stringify({os,key})});
+  if(key)osMarkers.marks[os]=key;else delete osMarkers.marks[os];
+  return r;
 }
 async function loadOS(force){
   $('os-state').textContent='Consultando Google Sheets...';
   try{
-    const resp=await api('/api/os'+(force?'?refresh=1':''));osRows=resp.rows||[];
+    const [resp]=await Promise.all([api('/api/os'+(force?'?refresh=1':'')),loadMarkers()]);
+    osRows=resp.rows||[];
     const stateText=resp.cached?'Dados recuperados do cache local (consulta online indisponível).':'Planilha sincronizada.';
     $('os-state').textContent=`${stateText} ${osRows.length} OS encontradas. ${resp.warning||''}`;
-    $('os-body').innerHTML=osRows.length?osRows.map((r,i)=>`<tr><td><b>${esc(r.os)}</b></td><td>${r['21307']}</td><td>${r['21308']}</td><td><b>${r.total}</b></td><td><button class="button soft select-os" data-index="${i}">Usar no Book</button></td></tr>`).join(''):'<tr><td colspan="5" class="empty">Nenhuma OS com códigos 21307 e 21308.</td></tr>';
-    document.querySelectorAll('.select-os').forEach(b=>b.onclick=()=>{
-      const r=osRows[+b.dataset.index];
-      if(state.bookType==='limpeza_faixa'){
-        if(state.records.length&&!confirm('As OS da planilha são de Poda. Trocar para Poda e descartar os trechos em edição?'))return;
-        state.bookType='poda';state.records=[];clearRecordFields();updateBookTypeUI();
-      }
-      if(state.records.length&&!confirm('Substituir a OS e a quantidade atual sem excluir as podas já adicionadas?'))return;
-      $('book-os').value=String(r.os).split('/')[0].trim();$('book-qtd').value=r.total;tab('book');scheduleDraft();toast(`OS ${r.os} selecionada. Quantidade: ${r.total}.`);
-    });
+    renderOSRows();
   }catch(e){$('os-state').textContent=e.message;toast(e.message,true)}
 }
 async function showSettings(){
   try{state.settings=await api('/api/settings');$('setting-dir').value=state.settings.output_dir;$('setting-prestador').value=state.settings.prestador;$('setting-prefix').value=state.settings.os_prefix;$('setting-prefix-faixa').value=state.settings.os_prefix_faixa||'';
-    $('sidebar-path').textContent=state.settings.output_dir;$('book-os-prefix').textContent=state.bookType==='limpeza_faixa'?(state.settings.os_prefix_faixa||'OS'):state.settings.os_prefix;
+    $('sidebar-path').textContent=state.settings.output_dir;$('book-os-prefix').textContent=state.bookType==='limpeza_faixa'?(state.settings.os_prefix_faixa||'ENG-LFBT02.CMAD'):state.settings.os_prefix;
     $('setting-github').value=state.settings.github_repo||'';loadUpdateStatus();
   }catch(e){toast(e.message,true)}
 }
 async function saveSettings(){
   try{const result=await api('/api/settings',{method:'POST',body:JSON.stringify({output_dir:$('setting-dir').value,prestador:$('setting-prestador').value,os_prefix:$('setting-prefix').value,os_prefix_faixa:$('setting-prefix-faixa').value})});
-    state.settings=result;$('sidebar-path').textContent=result.output_dir;$('book-os-prefix').textContent=state.bookType==='limpeza_faixa'?(result.os_prefix_faixa||'OS'):result.os_prefix;
+    state.settings=result;$('sidebar-path').textContent=result.output_dir;$('book-os-prefix').textContent=state.bookType==='limpeza_faixa'?(result.os_prefix_faixa||'ENG-LFBT02.CMAD'):result.os_prefix;
     toast('Configurações salvas. Novos PDFs serão enviados para a pasta configurada.');
   }catch(e){toast(e.message,true)}
 }
@@ -377,6 +480,10 @@ function wire(){
     }
     state.unit=next;$('book-qtd').value='';state.records.forEach(r=>r.measure='');$('rec-measure').value='';updateBookTypeUI();scheduleDraft();
   };
+  $('cancel-edit').onclick=()=>clearBook(false);
+  $('material-search').addEventListener('input',()=>{clearTimeout(materialTimer);materialTimer=setTimeout(searchMaterials,180)});
+  $('material-add').onclick=addMaterial;
+  $('marker-create').onclick=createMarker;
   $('new-book').onclick=()=>clearBook();$('add-record').onclick=addRecord;$('generate-pdf').onclick=generate;$('lookup-btn').onclick=lookup;
   for(const side of ['antes','depois']){
     const box=$('photo-'+side);box.addEventListener('click',e=>{if(!e.target.closest('button'))setActivePhoto(side)});
@@ -397,13 +504,34 @@ function wire(){
     if(!item)return;e.preventDefault();try{await upload(item.getAsFile(),state.activeSide)}catch(err){toast(err.message,true)}
   });
   $('map-find').onclick=findMap;$('map-search').onkeydown=e=>{if(e.key==='Enter')findMap()};$('map-use').onclick=useMap;$('map-clear').onclick=clearMap;
+  const resetMeasureBtns=()=>document.querySelectorAll('#measure-distance,#measure-area').forEach(b=>b.classList.remove('active'));
+  $('measure-distance').onclick=()=>{resetMeasureBtns();$('measure-distance').classList.add('active');callMap('setMeasureMode','distance');};
+  $('measure-area').onclick=()=>{resetMeasureBtns();$('measure-area').classList.add('active');callMap('setMeasureMode','area');};
+  $('measure-stop').onclick=()=>{resetMeasureBtns();callMap('finishMeasure')};
+  $('measure-clear').onclick=()=>{resetMeasureBtns();callMap('clearMeasure');$('map-measure-result').textContent='Medição limpa. Selecione uma ferramenta e marque os vértices.'};
+  $('map-fullscreen').onclick=async()=>{
+    try{if(document.fullscreenElement)await document.exitFullscreen();else await $('qfield-map').parentElement.requestFullscreen();}
+    catch(e){toast('Não foi possível entrar em tela cheia: '+e.message,true)}
+  };
   $('map-base').onchange=e=>callMap('setBaseMap',e.target.value);
   ['layer-td','layer-rd','layer-post'].forEach(id=>$(id).onchange=mapLayers);
   $('qfield-map').addEventListener('load',()=>{mapReady=true;mapLayers();callMap('setBaseMap',$('map-base').value)});
   document.addEventListener('keydown',e=>{
     if(e.key==='Delete'&&$('page-map').classList.contains('active')&&!['INPUT','TEXTAREA'].includes(document.activeElement.tagName))clearMap();
   });
-  window.addEventListener('message',e=>{if(e.origin===location.origin&&e.source===$('qfield-map').contentWindow&&e.data?.type==='bookpoda-marker-cleared'){state.mapSelected=null;$('map-use').disabled=true;$('map-result').textContent='Marcação removida. Pesquise novamente quando precisar.'}});
+  window.addEventListener('message',e=>{
+    if(e.origin!==location.origin||e.source!==$('qfield-map').contentWindow)return;
+    if(e.data?.type==='bookpoda-marker-cleared'){state.mapSelected=null;$('map-use').disabled=true;$('map-result').textContent='Marcação removida. Pesquise novamente quando precisar.'}
+    if(e.data?.type==='bookpoda-measure-result'){
+      const m=e.data.data||{};
+      const fmt=v=>Number(v||0).toLocaleString('pt-BR',{maximumFractionDigits:2});
+      const intro=`${m.vertices||0} vértice(s) — `;
+      const result=m.mode==='area'||m.closed?
+        `Área aproximada: ${fmt(m.squareMeters)} m² | Perímetro: ${fmt(m.meters)} m`:
+        `Distância: ${fmt(m.meters)} m (${fmt(m.km)} km)`;
+      $('map-measure-result').textContent=intro+result+(m.mode?' · Clique para acrescentar vértices; clique em Concluir quando terminar.':'');
+    }
+  });
   $('history-refresh').onclick=loadHistory;$('history-filter').addEventListener('input',()=>{clearTimeout(draftTimer);draftTimer=setTimeout(loadHistory,300)});
   $('os-refresh').onclick=()=>loadOS(true);$('settings-save').onclick=saveSettings;
   for(const id of ['update-save-repo','update-test','update-check'])$(id).dataset.defaultLabel=$(id).textContent;

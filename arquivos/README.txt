@@ -81,3 +81,15 @@ NOVO EM 12.4.0 - LIMPEZA DE FAIXA
   fica vazio por nao ter sido informado um prefixo oficial para este servico.
 - Historico de Poda e Limpeza de Faixa funciona junto, sem excluir registros.
 - A planilha Google Sheets 21307/21308 continua exclusiva da modalidade Poda.
+
+
+BOOK PODA v12.5.0 - melhorias consolidadas
+- OS: marcadores coloridos semitransparentes apenas sobre a celula da OS; legenda e personalizacao.
+- Usar no Book: registra o marcador OK sem excluir outras OS.
+- Limpeza de Faixa: ENG LFCG02 com prefixo ENG-LFBT02.CMAD e medicao em m2/km.
+- Registros: Editar, substituir foto/OS/data/medicao, salvar PDF com copia antiga em HistoricoEdicoes.
+- Materiais: catalogo da planilha lista_mateirias.xlsx; codigos/descricoes/unidades; tabela opcional no fim do PDF.
+- Mapa QField: camadas, pesquisa de TD/RD/coordenada, hover, tela cheia, medir distancia e area aproximada.
+- Imagens do satelite sao servidas por Esri; a resolucao depende da cobertura do provedor.
+- GitHub Releases: tools/gerar_release.py inclui novos arquivos e github_controls.js.
+- Dados, Books e Bases QField nao sao incluidos nas atualizacoes incrementais.

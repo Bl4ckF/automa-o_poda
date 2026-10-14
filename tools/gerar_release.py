@@ -18,7 +18,7 @@ FILES=[
  'server.py','book_engine.py','qfield_search.py','github_updates.py',
  'update_worker.py','version.json','requirements.txt','README.txt',
  'INSTALAR_E_INICIAR.bat','INICIAR_LOCALHOST.bat',
- 'web/index.html','web/app.js','web/style.css','web/map_v11.js','web/map_v11.html',
+ 'web/materiais_catalogo.json','web/index.html','web/app.js','web/github_controls.js','web/style.css','web/map_v11.js','web/map_v11.html',
 ]
 # Outros recursos visuais podem ser atualizados se necessário.
 for f in sorted((ROOT/'web').glob('*')):

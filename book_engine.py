@@ -56,9 +56,10 @@ def setup():
                 except (ValueError,OSError,TypeError): pass
 
 def get_settings():
-    default={'output_dir':str(BASE/'Books'),'prestador':'ENGELMIG ELÉTRICA LTDA','os_prefix':'ENG-PDBT02.CMAD','os_prefix_faixa':'','github_repo':''}
+    default={'output_dir':str(BASE/'Books'),'prestador':'ENGELMIG ELÉTRICA LTDA','os_prefix':'ENG-PDBT02.CMAD','os_prefix_faixa':'ENG-LFBT02.CMAD','github_repo':''}
     try: default.update(json.loads(CONFIG.read_text(encoding='utf-8')))
     except (OSError,ValueError): pass
+    if not default.get('os_prefix_faixa'): default['os_prefix_faixa']='ENG-LFBT02.CMAD'
     return default
 
 def set_settings(settings):
@@ -259,7 +260,7 @@ def parse_measure(value):
         raise ValueError('Use no máximo quatro casas decimais para a medição.')
     return v
 
-def make_pdf(path,osn,date,qtd,recs,prestador,book_type='poda',unit='un'):
+def make_pdf(path,osn,date,qtd,recs,prestador,book_type='poda',unit='un',materials=None):
     is_faixa=book_type=='limpeza_faixa'
     W,H=A4;L=8;R=W-8;T=H-8;split=L+(R-L)*.605;title=22;rh=22
     c=canvas.Canvas(str(path),pagesize=A4)
@@ -303,7 +304,50 @@ def make_pdf(path,osn,date,qtd,recs,prestador,book_type='poda',unit='un'):
                 _text(c,cx,yy,lb,9,True,True)
                 if v:_text(c,cx,yy-13,v,7,False,True,maxwidth=R-split-10)
         c.showPage()
+    if materials:
+        from reportlab.lib.colors import HexColor
+        def heading():
+            c.setFillColor(HexColor('#12372c'))
+            c.rect(34,H-92,W-68,60,fill=1,stroke=0)
+            c.setFillColorRGB(1,1,1)
+            _text(c,48,H-57,'MATERIAIS UTILIZADOS',14,True)
+            _text(c,48,H-78,'OS: '+str(osn)+'    EQUIPE: '+BOOK_TYPES[book_type]['team'],9)
+            c.setFillColorRGB(0,0,0)
+            c.setFont('Helvetica-Bold',9)
+            c.drawString(42,H-119,'CODIGO')
+            c.drawString(120,H-119,'DESCRICAO')
+            c.drawString(461,H-119,'UN.')
+            c.drawRightString(W-38,H-119,'QTD.')
+            c.line(36,H-126,W-36,H-126)
+        heading();y=H-145
+        for m in materials:
+            if y<56:c.showPage();heading();y=H-145
+            description=str(m['description'])
+            _text(c,42,y,str(m['code']),8)
+            _text(c,120,y,description,8,maxwidth=322)
+            _text(c,461,y,str(m['unit']),8,maxwidth=37)
+            c.setFont('Helvetica',8)
+            c.drawRightString(W-38,y,str(m['qty']).replace('.',','))
+            c.setStrokeColor(HexColor('#dfe8e1'));c.line(38,y-8,W-38,y-8)
+            y-=24
     c.save()
+
+def normalize_materials(items):
+    if items in (None,[]):return []
+    if not isinstance(items,list) or len(items)>100:raise ValueError('Limite de 100 materiais por Book.')
+    catalog_path=BASE/'web'/'materiais_catalogo.json'
+    catalog={str(m['code']):m for m in json.loads(catalog_path.read_text(encoding='utf-8'))}
+    out=[]
+    for item in items:
+        if not isinstance(item,dict):raise ValueError('Material inválido.')
+        code=str(item.get('code','')).strip()
+        ref=catalog.get(code)
+        if not ref:raise ValueError('Código de material não encontrado no catálogo: '+code)
+        unit=str(ref.get('unit') or item.get('unit') or '').strip().upper()
+        if not unit or len(unit)>12:raise ValueError('Informe a unidade do material '+code)
+        qty=parse_measure(item.get('qty'))
+        out.append({'code':code,'description':str(ref['description']),'unit':unit,'qty':str(qty)})
+    return out
 
 def local_media(ref):
     """Aceita somente caminhos virtuais de arquivos previamente enviados."""
@@ -324,6 +368,7 @@ def create_book(payload):
         date=date_parse(payload.get('date',''));day=date.strftime('%d/%m/%Y')
         osn=normalize_os(payload.get('os',''))
         recs=payload.get('records',[])
+        materials=normalize_materials(payload.get('materials',[]))
         if not isinstance(recs,list) or not 1<=len(recs)<=200:
             raise ValueError('Adicione de 1 a 200 evidências fotográficas.')
         if is_faixa:
@@ -366,7 +411,7 @@ def create_book(payload):
                 prepared.append(newrow)
             prefix=config.get('os_prefix_faixa','') if is_faixa else config['os_prefix']
             os_display=(prefix+' ' if prefix else '')+osn
-            make_pdf(target,os_display,day,qtd,prepared,config['prestador'],book_type,unit)
+            make_pdf(target,os_display,day,qtd,prepared,config['prestador'],book_type,unit,materials)
         except Exception:
             if target.exists():target.unlink()
             for p in saved_refs:p.unlink(missing_ok=True)
@@ -374,7 +419,7 @@ def create_book(payload):
             except OSError:pass
             raise
         now=dt.datetime.now().strftime('%d/%m/%Y %H:%M')
-        saved={'os':osn,'date':day,'qtd':str(qtd) if is_faixa else qtd,'book_type':book_type,'unit':unit,'team':BOOK_TYPES[book_type]['team'],'records':prepared}
+        saved={'os':osn,'date':day,'qtd':str(qtd) if is_faixa else qtd,'book_type':book_type,'unit':unit,'team':BOOK_TYPES[book_type]['team'],'records':prepared,'materials':materials}
         with sqlite3.connect(BOOKS_DB) as db:
             cur=db.execute('INSERT INTO books(os,data,qtd,filename,path,created,payload,tipo,unidade) VALUES(?,?,?,?,?,?,?,?,?)',
                            (osn,day,float(qtd) if is_faixa else qtd,filename,str(target),now,json.dumps(saved,ensure_ascii=False),book_type,unit))
@@ -439,3 +484,163 @@ def sheet_os(force=False):
                 result=json.loads(OS_CACHE.read_text(encoding='utf-8'))
                 result['cached']=True;result['warning']=str(exc);return result
             except (OSError,ValueError):raise RuntimeError(f'Não foi possível acessar a planilha: {exc}')
+
+# ---------- Book Poda v12.5: OS, materiais e revisoes ----------
+"""Extensions for Book Poda v12.5: durable OS markers, material catalog, safe PDF revisions."""
+import datetime as dt
+import json
+import re
+import shutil
+import sqlite3
+import tempfile
+import uuid
+from decimal import Decimal
+from pathlib import Path
+
+DEFAULT_MARKERS=[('ok','OK','#2E9D62'),('pendente','Pendente','#D59A22'),('andamento','Em andamento','#4489CC'),('revisar','Revisar','#CF5964')]
+
+def setup_extras():
+    with sqlite3.connect(BOOKS_DB) as db:
+        db.execute('CREATE TABLE IF NOT EXISTS os_marker_types (key TEXT PRIMARY KEY, label TEXT NOT NULL, color TEXT NOT NULL, position INTEGER NOT NULL DEFAULT 0)')
+        db.execute('CREATE TABLE IF NOT EXISTS os_marks (os TEXT PRIMARY KEY, marker_key TEXT NOT NULL, updated TEXT NOT NULL)')
+        for i,(key,label,color) in enumerate(DEFAULT_MARKERS):
+            db.execute('INSERT OR IGNORE INTO os_marker_types(key,label,color,position) VALUES(?,?,?,?)',(key,label,color,i))
+
+def marker_data():
+    setup_extras()
+    with sqlite3.connect(BOOKS_DB) as db:
+        db.row_factory=sqlite3.Row
+        types=[dict(x) for x in db.execute('SELECT key,label,color FROM os_marker_types ORDER BY position,label')]
+        marked={r['os']:r['marker_key'] for r in db.execute('SELECT os,marker_key FROM os_marks')}
+    return {'types':types,'marks':marked}
+
+def mark_os(data):
+    setup_extras()
+    osn=str(data.get('os','')).strip()
+    key=str(data.get('key','')).strip()
+    if not 1<=len(osn)<=80:raise ValueError('Informe a OS.')
+    with sqlite3.connect(BOOKS_DB) as db:
+        if key and not db.execute('SELECT 1 FROM os_marker_types WHERE key=?',(key,)).fetchone():raise ValueError('Marcador não encontrado.')
+        if key:db.execute('INSERT OR REPLACE INTO os_marks(os,marker_key,updated) VALUES(?,?,?)',(osn,key,dt.datetime.now().isoformat()))
+        else:db.execute('DELETE FROM os_marks WHERE os=?',(osn,))
+    return {'ok':True,'os':osn,'key':key}
+
+def update_marker_type(data):
+    setup_extras()
+    key=str(data.get('key','')).strip().lower()
+    label=str(data.get('label','')).strip()
+    color=str(data.get('color','')).strip().upper()
+    action=str(data.get('action','save'))
+    if not re.fullmatch(r'[a-z0-9_-]{1,35}',key):raise ValueError('Identificador de marcador inválido.')
+    if action=='delete':
+        if key=='ok':raise ValueError('O marcador OK é obrigatório.')
+        with sqlite3.connect(BOOKS_DB) as db:
+            db.execute('DELETE FROM os_marks WHERE marker_key=?',(key,))
+            db.execute('DELETE FROM os_marker_types WHERE key=?',(key,))
+        return marker_data()
+    if not 1<=len(label)<=40 or not re.fullmatch(r'#[0-9A-F]{6}',color):raise ValueError('Nome ou cor inválidos.')
+    with sqlite3.connect(BOOKS_DB) as db:
+        pos=db.execute('SELECT position FROM os_marker_types WHERE key=?',(key,)).fetchone()
+        if pos:db.execute('UPDATE os_marker_types SET label=?,color=? WHERE key=?',(label,color,key))
+        else:db.execute('INSERT INTO os_marker_types(key,label,color,position) VALUES(?,?,?,?)',(key,label,color,100))
+    return marker_data()
+
+_catalog=None
+def materials_search(q='',limit=60):
+    global _catalog
+    if _catalog is None:_catalog=json.loads((BASE/'web'/'materiais_catalogo.json').read_text(encoding='utf-8'))
+    term=str(q).strip().casefold()
+    rows=([x for x in _catalog if term in x['code'].casefold() or term in x['description'].casefold()] if term else _catalog[:limit])
+    return {'rows':rows[:limit],'total':len(_catalog)}
+
+def _valid_photo(ref,old,book_id):
+    uploaded=local_media(ref)
+    if uploaded:return uploaded
+    match=re.fullmatch(r'/api/books/(\d+)/photo/(\d+)/(antes|depois)',ref)
+    if not match or int(match[1])!=book_id:raise ValueError('Foto antiga inválida ou não autorizada.')
+    index=int(match[2]);side=match[3]
+    try:photo=Path(old['payload']['records'][index][side])
+    except (IndexError,KeyError,TypeError):raise ValueError('Foto não disponível na versão anterior.')
+    if not photo.is_file():raise ValueError('Foto anterior não encontrada: '+side)
+    return photo
+
+def update_book(book_id,payload):
+    """Prepare complete revision, back up previous PDF, atomically replace DB row.
+    Old media is preserved for backup/recoverability. Uploads and prior photos only.
+    """
+    with LOCK:
+        old=get_book(book_id)
+        if old is None:raise ValueError('Book não encontrado.')
+        if old['payload'].get('legacy'):raise ValueError('Registro antigo sem fotos editáveis. Gere um novo Book.')
+        kind=str(payload.get('book_type') or old['tipo'])
+        if kind not in BOOK_TYPES:raise ValueError('Tipo do Book inválido.')
+        unit=str(payload.get('unit','m2' if kind=='limpeza_faixa' else 'un'))
+        if kind=='limpeza_faixa' and unit not in MEASURE_UNITS:raise ValueError('Unidade inválida.')
+        if kind!='limpeza_faixa':unit='un'
+        date=date_parse(payload.get('date',''))
+        day=date.strftime('%d/%m/%Y')
+        osn=normalize_os(payload.get('os',''))
+        records=payload.get('records',[])
+        if not isinstance(records,list) or not 1<=len(records)<=200:raise ValueError('Adicione de 1 a 200 evidências.')
+        if kind=='limpeza_faixa':
+            subtotal=[parse_measure(x['measure']) for x in records if isinstance(x,dict) and str(x.get('measure','')).strip()]
+            if str(payload.get('qtd','')).strip():qtd=parse_measure(payload['qtd'])
+            elif len(subtotal)==len(records):qtd=sum(subtotal,Decimal(0))
+            else:raise ValueError('Informe o total da Limpeza de Faixa.')
+            if len(subtotal)==len(records) and qtd!=sum(subtotal,Decimal(0)):
+                raise ValueError('Medição total diferente da soma dos trechos.')
+        else:
+            try:qtd=int(payload.get('qtd') or len(records))
+            except (TypeError,ValueError):raise ValueError('Quantidade de podas inválida.')
+            if qtd<=0:raise ValueError('Quantidade deve ser positiva.')
+        materials=normalize_materials(payload.get('materials',[]))
+        cfg=get_settings()
+        year=str(date.year)
+        month=f'{date.month:02d} - {MONTHS[date.month-1]}'
+        folder=(Path(cfg['output_dir']).expanduser().resolve()/year/month)
+        folder.mkdir(parents=True,exist_ok=True)
+        filename=f'BOOK-{BOOK_TYPES[kind]["filename_team"]}-{osn}-{year}.pdf'
+        target=folder/filename
+        previous=Path(old['path']).resolve()
+        if target.exists() and target.resolve()!=previous:raise FileExistsError('Outro Book já utiliza este nome. Altere a OS ou data.')
+        photo_folder=folder/f'FOTOS-REVISAO-{book_id}-{uuid.uuid4().hex[:8]}'
+        photo_folder.mkdir(parents=True,exist_ok=True)
+        prepared=[]
+        staged_pdf=folder/f'.{uuid.uuid4().hex}.pdf'
+        try:
+            for row in records:
+                if not isinstance(row,dict):raise ValueError('Registro inválido.')
+                coord=str(row.get('coord','')).strip()
+                parse_coord(coord)
+                newrow={k:str(row.get(k,'')).strip() for k in ('coord','rua','bairro','td','rd')}
+                if kind=='limpeza_faixa' and str(row.get('measure','')).strip():newrow['measure']=str(parse_measure(row['measure']))
+                for side in ('antes','depois'):
+                    source=_valid_photo(str(row.get(side,'')),old,book_id)
+                    dest=photo_folder/(uuid.uuid4().hex+source.suffix.lower())
+                    shutil.copyfile(source,dest)
+                    newrow[side]=str(dest)
+                prepared.append(newrow)
+            prefix=(cfg.get('os_prefix_faixa') or 'ENG-LFBT02.CMAD') if kind=='limpeza_faixa' else cfg['os_prefix']
+            make_pdf(staged_pdf,(prefix+' ' if prefix else '')+osn,day,qtd,prepared,cfg['prestador'],kind,unit,materials)
+            backup_folder=previous.parent/'HistoricoEdicoes'
+            backup_folder.mkdir(parents=True,exist_ok=True)
+            timestamp=dt.datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+            backup=backup_folder/(previous.stem+'__antes_da_edicao_'+timestamp+'.pdf')
+            if previous.exists():shutil.copy2(previous,backup)
+            # If the target path changes, the previous PDF is retained as its backup.
+            # Stage first, then swap file and only then change the database.
+            staged_pdf.replace(target)
+            now=dt.datetime.now().strftime('%d/%m/%Y %H:%M')
+            saved={'os':osn,'date':day,'qtd':str(qtd) if kind=='limpeza_faixa' else qtd,
+                   'book_type':kind,'unit':unit,'team':BOOK_TYPES[kind]['team'],
+                   'records':prepared,'materials':materials,'updated':now}
+            with sqlite3.connect(BOOKS_DB) as db:
+                db.execute('UPDATE books SET os=?,data=?,qtd=?,filename=?,path=?,payload=?,tipo=?,unidade=? WHERE id=?',
+                           (osn,day,float(qtd) if kind=='limpeza_faixa' else qtd,filename,str(target),json.dumps(saved,ensure_ascii=False),kind,unit,book_id))
+            if previous!=target and previous.exists():previous.unlink()
+        except Exception:
+            staged_pdf.unlink(missing_ok=True)
+            shutil.rmtree(photo_folder,ignore_errors=True)
+            raise
+        return {'ok':True,'id':book_id,'filename':filename,'folder':str(folder),
+                'pdf_url':f'/api/books/{book_id}/pdf','backup':str(backup),'updated':now}

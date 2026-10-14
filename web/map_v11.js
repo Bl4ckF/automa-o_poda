@@ -7,7 +7,7 @@ const cv=document.getElementById('features'),cx=cv.getContext('2d',{alpha:true})
 const tip=document.getElementById('tooltip'),pin=document.getElementById('search-pin');
 const btnClear=document.getElementById('clear-marker'),status=document.getElementById('map-status');
 const manifest=window.QFIELD_TILE_MANIFEST||{},STEP=window.QFIELD_TILE_STEP||.02;
-const PIX=256,MINZOOM=5,MAXZOOM=19,MAX_RASTER_ZOOM=16;
+const PIX=256,MINZOOM=5,MAXZOOM=20,MAX_RASTER_ZOOM=18;
 let width=1,height=1,dpr=1,zoom=15,center={lat:-20.47,lon:-54.62};
 let base='Satélite',showTD=true,showRD=true,showPost=false;
 let selectedPin=null,focusEquipment=null,evidences=[],bridge=null;
@@ -19,6 +19,7 @@ const MAX_LOADS=2;
 // Imagens-base têm cache limitado; as imagens já visitadas continuam no cache HTTP do Chromium.
 const rasterCache=new Map(),rasterActive=new Set();const RASTER_CACHE_LIMIT=180;
 let hitPoints=[];
+let measureMode="",measurePoints=[],measureClosed=false;
 const rad=Math.PI/180;
 function mercator(lat,lon,z){
   const s=PIX*Math.pow(2,z),sin=Math.max(-.999999,Math.min(.999999,Math.sin(lat*rad)));
@@ -204,11 +205,48 @@ function drawSpecial(){
     pin.style.display=(p.x>=-20&&p.x<=width+20&&p.y>=-20&&p.y<=height+20)?'block':'none';
   }else pin.style.display='none';
 }
+
+function haversine(a,b){
+ const dy=(b.lat-a.lat)*rad,dx=(b.lon-a.lon)*rad;
+ const h=Math.sin(dy/2)**2+Math.cos(a.lat*rad)*Math.cos(b.lat*rad)*Math.sin(dx/2)**2;
+ return 12742000*Math.asin(Math.min(1,Math.sqrt(h)));
+}
+function measureStats(){
+ const n=measurePoints.length,pts=measurePoints;
+ let length=0;
+ for(let i=1;i<n;i++)length+=haversine(pts[i-1],pts[i]);
+ if(measureClosed&&n>=3)length+=haversine(pts[n-1],pts[0]);
+ let area=0;
+ if(n>=3){
+  const lat0=pts.reduce((a,v)=>a+v.lat,0)/n*rad;
+  const kx=111320*Math.cos(lat0),ky=111132;
+  for(let i=0;i<n;i++){
+    const a=pts[i],b=pts[(i+1)%n];area+=((a.lon*kx)*(b.lat*ky)-(b.lon*kx)*(a.lat*ky));
+  }
+  area=Math.abs(area)/2;
+ }
+ return {vertices:n,meters:length,km:length/1000,squareMeters:area,mode:measureMode,closed:measureClosed};
+}
+function reportMeasure(){
+ const data=measureStats();
+ try{window.parent.postMessage({type:'bookpoda-measure-result',data},location.origin)}catch(e){}
+}
+function drawMeasure(){
+ if(!measurePoints.length)return;
+ const pts=measurePoints.map(p=>position(p.lat,p.lon));
+ cx.save();cx.beginPath();pts.forEach((p,i)=>i?cx.lineTo(p.x,p.y):cx.moveTo(p.x,p.y));
+ if(measureClosed&&pts.length>=3)cx.closePath();
+ cx.setLineDash([8,4]);cx.lineWidth=3;cx.strokeStyle='#fdfd5a';cx.shadowBlur=6;cx.shadowColor='#0a2d43';cx.stroke();
+ if(measureClosed){cx.fillStyle='#f3ff4f3c';cx.fill()}
+ cx.setLineDash([]);cx.shadowBlur=0;
+ for(const p of pts){cx.beginPath();cx.arc(p.x,p.y,5,0,Math.PI*2);cx.fillStyle='#fafa43';cx.fill();cx.strokeStyle='#102a43';cx.lineWidth=2;cx.stroke()}
+ cx.restore();
+}
 function draw(){
   updateRaster();
   if(moving)return;
   cx.clearRect(0,0,width,height);hitPoints=[];
-  const st=drawEquipment();drawSpecial();
+  const st=drawEquipment();drawSpecial();drawMeasure();
   const areas=viewportCells(),loaded=areas.filter(k=>geoCache.has(k)).length;
   const fmt=n=>Number(n).toLocaleString('pt-BR');
   const count=k=>st[k].total?fmt(st[k].total)+(st[k].rendered<st[k].total?' ('+fmt(st[k].rendered)+' símbolos)':''):'0';
@@ -287,7 +325,9 @@ root.addEventListener('pointerup',e=>{
   moving=false;pointerLast=null;root.classList.remove('is-dragging');
   cv.style.transform='';panX=panY=0;
   redrawSoon();scheduleGeo();
-  if(!moved){const p=localPos(e),hit=hitTest(p.x,p.y);
+  if(!moved){const p=localPos(e);
+    if(measureMode){measurePoints.push(atPixel(p.x,p.y));measureClosed=false;redrawSoon();reportMeasure();return}
+    const hit=hitTest(p.x,p.y);
     if(hit&&hit.kind.startsWith('Grupo ')){
       zoomAt(p.x,p.y,Math.min(2,MAXZOOM-zoom));return;
     }
@@ -301,7 +341,13 @@ root.addEventListener('pointerup',e=>{
 });
 root.addEventListener('pointercancel',()=>{moving=false;pointerLast=null;cv.style.transform='';panX=panY=0;root.classList.remove('is-dragging');redrawSoon();scheduleGeo()});
 root.addEventListener('pointerleave',()=>tip.style.display='none');
-root.addEventListener('dblclick',e=>{if(e.target.closest('button'))return;const p=localPos(e);zoomAt(p.x,p.y,1);e.preventDefault()});
+root.addEventListener('dblclick',e=>{if(e.target.closest('button'))return;
+  if(measureMode){if(measurePoints.length>1){
+    const n=measurePoints.length,a=measurePoints[n-1],b=measurePoints[n-2];
+    if(haversine(a,b)<3)measurePoints.pop();
+    measureClosed=measureMode==='area';reportMeasure();redrawSoon();
+  }e.preventDefault();return}
+  const p=localPos(e);zoomAt(p.x,p.y,1);e.preventDefault();});
 let lastWheel=0;
 root.addEventListener('wheel',e=>{
   if(e.target.closest('button'))return;
@@ -333,6 +379,10 @@ window.goTo=window.flyToPoint;
 window.setLayerVisibility=(td,rd,post)=>{showTD=!!td;showRD=!!rd;showPost=!!post;redrawSoon();scheduleGeo()};
 window.setBaseMap=name=>{base=['Satélite','Híbrido','Mapa','Sem fundo'].includes(name)?name:'Satélite';redrawSoon()};
 window.setEvidenceData=data=>{evidences=Array.isArray(data)?data:[];redrawSoon()};
+window.setMeasureMode=mode=>{measureMode=['distance','area'].includes(mode)?mode:'';measurePoints=[];measureClosed=false;redrawSoon();reportMeasure();return true};
+window.finishMeasure=()=>{measureClosed=measureMode==='area';measureMode='';redrawSoon();reportMeasure();};
+window.clearMeasure=()=>{measureMode='';measurePoints=[];measureClosed=false;redrawSoon();reportMeasure();};
+window.bookPodaMeasureStats=measureStats;
 window.setQFieldData=()=>{};
 window.requestViewport=()=>{scheduleGeo();redrawSoon()};
 window.bookPodaMapReady=()=>!!(root&&cv&&cx&&window.QFIELD_TILE_MANIFEST);

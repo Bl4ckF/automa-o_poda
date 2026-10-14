@@ -16,6 +16,7 @@ from pathlib import Path
 from urllib.parse import urlparse,parse_qs,unquote
 import book_engine as core
 import github_updates as updates
+import book_engine as extras
 from update_worker import inspect_zip, write_status, status_file
 
 ROOT=Path(__file__).resolve().parent
@@ -26,7 +27,7 @@ LOG=core.DATA/'servidor.log'
 UPDATE_LOCK=threading.Lock()
 
 class Handler(BaseHTTPRequestHandler):
-    server_version='BookPodaLocal/12.4.1'
+    server_version='BookPodaLocal/12.5.0'
     def log_message(self,fmt,*args):
         logging.info('%s '+fmt,self.client_address[0],*args)
 
@@ -80,6 +81,8 @@ class Handler(BaseHTTPRequestHandler):
             cfg['github_repo']=updates.read_repository(cfg.get('github_repo',''))
             return self._json(cfg)
         if p=='/api/draft':return self._json(core.load_draft())
+        if p=='/api/materials':return self._json(extras.materials_search(query.get('q',[''])[0]))
+        if p=='/api/os/markers':return self._json(extras.marker_data())
         if p=='/api/search':return self._json(core.search_location(query.get('q',[''])[0]))
         if p=='/api/lookup':return self._json(core.lookup_coord(query.get('coord',[''])[0]))
         if p=='/api/books':return self._json({'rows':core.list_books(query.get('q',[''])[0])})
@@ -197,6 +200,10 @@ class Handler(BaseHTTPRequestHandler):
             path.write_bytes(content)
             return self._json({'url':'/media/'+filename})
         if p=='/api/books/generate':return self._json(core.create_book(self._payload()))
+        if re.fullmatch(r'/api/books/\d+/edit',p):
+            return self._json(extras.update_book(int(p.split('/')[3]),self._payload()))
+        if p=='/api/os/marker':return self._json(extras.mark_os(self._payload(10000)))
+        if p=='/api/os/marker_type':return self._json(extras.update_marker_type(self._payload(10000)))
         if p=='/api/settings':return self._json(core.set_settings(self._payload()))
         if p=='/api/draft':return self._json(core.save_draft(self._payload()))
         if p=='/api/draft/clear':return self._json(core.save_draft({}))
@@ -216,6 +223,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def run(port=PORT,open_browser=True):
     core.setup()
+    extras.setup_extras()
     core.equipment()
     logging.basicConfig(filename=LOG,level=logging.INFO,format='%(asctime)s %(levelname)s %(message)s',encoding='utf-8')
     httpd=ThreadingHTTPServer((HOST,port),Handler)
