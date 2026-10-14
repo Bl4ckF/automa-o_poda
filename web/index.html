@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Book Poda • Localhost</title><link rel="icon" href="/assets/logo.png"><link rel="stylesheet" href="/assets/style.css"></head>
+<title>Book Poda • Limpeza de Faixa • Localhost</title><link rel="icon" href="/assets/logo.png"><link rel="stylesheet" href="/assets/style.css"></head>
 <body>
 <div id="app">
 <aside class="sidebar">
@@ -15,14 +15,18 @@
   <div class="sidebar-bottom"><span class="status-dot"></span> Localhost • <span id="backend-status">conectando...</span><div class="sidebar-secondary" id="sidebar-path"></div></div>
 </aside>
 <main class="main">
-  <header class="topbar"><div><div class="eyebrow">ENGELMIG ENERGIA / PODA</div><h1 id="page-title">Novo Book fotográfico</h1></div><div class="topright"><div class="server-tag">● Salvo localmente</div><span id="clock"></span></div></header>
+  <header class="topbar"><div><div class="eyebrow"><span id="service-header">ENGELMIG ENERGIA / PODA</span></div><h1 id="page-title">Novo Book fotográfico</h1></div><div class="topright"><div class="server-tag">● Salvo localmente</div><span id="clock"></span></div></header>
   <div id="alert" class="alert hidden" role="status"></div>
   <section id="page-book" class="page active">
-    <div class="section-heading"><div><h2>Informações do Book</h2><p>Preencha a OS, a data e inclua as evidências de cada poda.</p></div><button id="new-book" class="button ghost">＋ Iniciar novo Book</button></div>
+    <div class="section-heading"><div><h2>Informações do Book</h2><p id="book-intro">Preencha a OS, a data e inclua as evidências de cada poda.</p></div><button id="new-book" class="button ghost">＋ Iniciar novo Book</button></div>
+    <div class="card service-selector">
+      <div><label for="book-type"><span>Tipo de serviço</span></label><select id="book-type"><option value="poda">Poda</option><option value="limpeza_faixa">Limpeza de Faixa</option></select></div>
+      <div class="team-info"><small>Equipe responsável</small><strong id="book-team">ENG PDCG02</strong><span id="type-hint">Quantidade contabilizada por poda.</span></div>
+    </div>
     <div class="card book-meta">
-      <label><span>Número da OS</span><div class="input-prefix"><b>ENG-PDBT02.CMAD</b><input id="book-os" placeholder="008398" autocomplete="off"></div></label>
+      <label><span>Número da OS</span><div class="input-prefix"><b id="book-os-prefix">ENG-PDBT02.CMAD</b><input id="book-os" placeholder="008398" autocomplete="off"></div></label>
       <label><span>Data da produção</span><input id="book-date" placeholder="DD/MM/AAAA" inputmode="numeric" maxlength="10"></label>
-      <label><span>Quantidade de podas</span><input id="book-qtd" type="number" min="1" placeholder="Auto"></label>
+      <label><span id="book-qtd-label">Quantidade de podas</span><div class="metric-control"><input id="book-qtd" type="number" min="1" placeholder="Auto"><select id="book-unit" class="hidden" aria-label="Unidade da Limpeza de Faixa"><option value="m2">m²</option><option value="km">km</option></select></div><small id="book-qtd-hint" class="field-hint">Quantidade total de podas.</small></label>
     </div>
     <div class="section-heading next"><div><h2>Adicionar evidência</h2><p>Selecione uma foto ANTES e outra DEPOIS. Você também pode colar imagens do WhatsApp com Ctrl+V.</p></div><span class="subtle">Cada registro gera uma página no PDF</span></div>
     <div class="card detail-card">
@@ -32,16 +36,17 @@
         <label><span>Religador</span><input id="rec-rd" placeholder="RD-12345"></label>
         <label><span>Bairro</span><input id="rec-bairro" placeholder="Bairro da poda"></label>
         <label><span>Rua / Avenida</span><input id="rec-rua" placeholder="Logradouro"></label>
+        <label id="rec-measure-wrap" class="hidden"><span id="rec-measure-label">Medição deste trecho (m²)</span><input id="rec-measure" type="text" inputmode="decimal" placeholder="Opcional, ex.: 250,5"><small class="field-hint">Se medir todos os trechos, o total será somado automaticamente.</small></label>
       </div>
       <div class="photo-grid">
         <div class="photo-box" id="photo-antes" data-side="antes" tabindex="0"><div class="photo-header"><strong>ANTES</strong><span>Foto da situação inicial</span></div><img class="preview hidden" alt="Foto antes"><div class="photo-empty"><span class="camera">▧</span><b>Selecione esta área e cole</b><small>Ctrl+V, arraste uma foto ou escolha um arquivo</small></div><div class="photo-actions"><button class="button soft choose-photo" data-side="antes">Escolher foto</button><button class="button minimal clear-photo" data-side="antes">Limpar</button></div></div>
-        <div class="photo-box" id="photo-depois" data-side="depois" tabindex="0"><div class="photo-header"><strong>DEPOIS</strong><span>Foto após a poda</span></div><img class="preview hidden" alt="Foto depois"><div class="photo-empty"><span class="camera">▧</span><b>Selecione esta área e cole</b><small>Ctrl+V, arraste uma foto ou escolha um arquivo</small></div><div class="photo-actions"><button class="button soft choose-photo" data-side="depois">Escolher foto</button><button class="button minimal clear-photo" data-side="depois">Limpar</button></div></div>
+        <div class="photo-box" id="photo-depois" data-side="depois" tabindex="0"><div class="photo-header"><strong>DEPOIS</strong><span>Foto após o serviço</span></div><img class="preview hidden" alt="Foto depois"><div class="photo-empty"><span class="camera">▧</span><b>Selecione esta área e cole</b><small>Ctrl+V, arraste uma foto ou escolha um arquivo</small></div><div class="photo-actions"><button class="button soft choose-photo" data-side="depois">Escolher foto</button><button class="button minimal clear-photo" data-side="depois">Limpar</button></div></div>
       </div>
       <input id="photo-input" class="hidden" type="file" accept="image/*">
       <div class="form-bottom"><p id="record-help">Clique numa das áreas para selecionar onde a próxima imagem será colada.</p><button class="button primary" id="add-record">＋ Adicionar poda ao Book</button></div>
     </div>
-    <div class="section-heading next"><div><h2>Podas deste Book <span class="count" id="records-count">0</span></h2><p>As podas deste Book não interferem no histórico de PDFs gerados.</p></div></div>
-    <div class="card records-list" id="record-list"><div class="empty">Ainda não há podas neste Book.</div></div>
+    <div class="section-heading next"><div><h2><span id="records-heading">Podas deste Book</span> <span class="count" id="records-count">0</span></h2><p id="records-caption">As podas deste Book não interferem no histórico de PDFs gerados.</p></div></div>
+    <div class="card records-list" id="record-list"><div class="empty">Ainda não há registros neste Book.</div></div>
     <div class="book-actions"><div class="path-info">Destino: <strong id="book-dest">Books / Ano / Mês</strong></div><button id="generate-pdf" class="button primary large">Gerar PDF e salvar Book</button></div>
   </section>
 
@@ -56,15 +61,16 @@
       </aside></div>
   </section>
 
-  <section id="page-history" class="page"><div class="section-heading"><div><h2>Registros de Books</h2><p>O histórico permanece salvo mesmo ao iniciar outro Book.</p></div><div class="search-simple"><input id="history-filter" placeholder="Pesquisar OS"><button id="history-refresh" class="button ghost">Atualizar</button></div></div><div class="card table-wrap"><table><thead><tr><th>OS</th><th>Data</th><th>Podas</th><th>Arquivo</th><th>Gerado em</th><th>Ações</th></tr></thead><tbody id="history-body"><tr><td colspan="6" class="empty">Carregando...</td></tr></tbody></table></div></section>
+  <section id="page-history" class="page"><div class="section-heading"><div><h2>Registros de Books</h2><p>O histórico permanece salvo mesmo ao iniciar outro Book.</p></div><div class="search-simple"><input id="history-filter" placeholder="Pesquisar OS"><button id="history-refresh" class="button ghost">Atualizar</button></div></div><div class="card table-wrap"><table><thead><tr><th>Tipo / Equipe</th><th>OS</th><th>Data</th><th>Quantidade / Medição</th><th>Arquivo</th><th>Gerado em</th><th>Ações</th></tr></thead><tbody id="history-body"><tr><td colspan="7" class="empty">Carregando...</td></tr></tbody></table></div></section>
 
   <section id="page-os" class="page"><div class="section-heading"><div><h2>Ordens de Serviço</h2><p>Google Sheets • aba Respostas • códigos 21307 e 21308</p></div><button id="os-refresh" class="button primary">↻ Atualizar planilha</button></div><div id="os-state" class="hint">Aguardando consulta da planilha.</div><div class="card table-wrap"><table><thead><tr><th>OS</th><th>21307 • Pequeno porte</th><th>21308 • Médio porte</th><th>Quantidade total</th><th>Ação</th></tr></thead><tbody id="os-body"><tr><td colspan="5" class="empty">Abra esta seção para carregar.</td></tr></tbody></table></div></section>
 
-  <section id="page-settings" class="page"><div class="section-heading"><div><h2>Configurações</h2><p>Personalize a pasta de saída e as informações do cabeçalho.</p></div></div><div class="card settings-card"><label><span>Pasta principal para salvar os Books</span><input id="setting-dir" placeholder="C:\Books Poda"><small>Os PDFs serão organizados automaticamente dentro de Ano / MM - Mês. A pasta é criada quando necessário.</small></label><div class="settings-grid"><label><span>Prestador</span><input id="setting-prestador"></label><label><span>Prefixo da OS no PDF</span><input id="setting-prefix"></label></div><div class="folder-sample"><b>Exemplo de estrutura:</b><div>📁 Books<br>&nbsp;&nbsp;└ 📁 2026<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└ 📁 10 - Outubro<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├ 📄 BOOK-ENG-PDCG02-008398-2026.pdf<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└ 📁 FOTOS-008398-2026</div></div><div class="form-bottom"><span id="settings-status"></span><button id="settings-save" class="button primary">Salvar configurações</button></div></div><div class="card github-update-card" id="github-update-card">
-  <div class="section-heading"><div><h3>Atualização direta pelo GitHub</h3><p>Verifique e instale novas versões oficiais sem substituir arquivos manualmente.</p></div><span id="update-current" class="server-tag">Versão 12.3.0</span></div>
+  <section id="page-settings" class="page"><div class="section-heading"><div><h2>Configurações</h2><p>Personalize a pasta de saída e as informações do cabeçalho.</p></div></div><div class="card settings-card"><label><span>Pasta principal para salvar os Books</span><input id="setting-dir" placeholder="C:\Books Poda"><small>Os PDFs serão organizados automaticamente dentro de Ano / MM - Mês. A pasta é criada quando necessário.</small></label><div class="settings-grid"><label><span>Prestador</span><input id="setting-prestador"></label><label><span>Prefixo da OS para Poda</span><input id="setting-prefix"></label><label><span>Prefixo da OS para Limpeza de Faixa (opcional)</span><input id="setting-prefix-faixa" placeholder="Sem prefixo; o número da OS será exibido sozinho"><small>Não foi definido um prefixo para a nova equipe. Deixe vazio ou configure o correto.</small></label></div><div class="folder-sample"><b>Exemplo de estrutura:</b><div>📁 Books<br>&nbsp;&nbsp;└ 📁 2026<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└ 📁 10 - Outubro<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;├ 📄 BOOK-ENG-PDCG02-008398-2026.pdf<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;└ 📁 FOTOS-008398-2026</div></div><div class="form-bottom"><span id="settings-status"></span><button id="settings-save" class="button primary">Salvar configurações</button></div></div><div class="card github-update-card" id="github-update-card">
+  <div class="section-heading"><div><h3>Atualização direta pelo GitHub</h3><p>Verifique e instale novas versões oficiais sem substituir arquivos manualmente.</p></div><span id="update-current" class="server-tag">Versão 12.4.1</span></div>
   <label><span>Repositório GitHub (público)</span><input id="setting-github" placeholder="usuario/repositorio ou https://github.com/usuario/repositorio" autocomplete="off" spellcheck="false"><small>Use o repositório de quem publica as versões do Book Poda. Atualizações precisam de uma Release com o arquivo book-poda-update.zip.</small></label>
-  <div class="update-buttons"><button id="update-save-repo" class="button ghost">Salvar repositório</button><button id="update-check" class="button soft">↻ Verificar atualizações</button><button id="update-install" class="button primary" disabled>Instalar atualização</button></div>
-  <div id="update-message" class="update-message" role="status">Configure o repositório para procurar novas versões.</div>
+  <div class="update-buttons"><button id="update-save-repo" class="button ghost" type="button">Salvar repositório</button><button id="update-test" class="button ghost" type="button">Testar repositório</button><button id="update-check" class="button soft" type="button">↻ Verificar atualizações</button><button id="update-install" class="button primary" type="button" disabled>Instalar atualização</button></div>
+  <div class="update-check-result" id="update-check-result" aria-live="polite"><span id="update-indicator" class="update-indicator">● Não verificado</span><a href="#" id="update-repo-link" target="_blank" rel="noopener noreferrer" class="hidden">Abrir repositório ↗</a></div>
+  <div id="update-message" class="update-message" role="status" aria-live="polite">Clique em Testar repositório para confirmar a conexão.</div>
   <div id="update-release" class="update-release hidden"><div id="update-release-details"></div><a id="update-release-link" href="#" target="_blank" rel="noopener noreferrer">Ver versão no GitHub ↗</a></div>
   <p class="update-note">Antes da instalação o arquivo é validado com SHA-256 e uma cópia de segurança do código é criada. <strong>Books, fotos, histórico, configurações, Bases QField e ambiente Python não são apagados.</strong> O servidor será reiniciado automaticamente.</p>
 </div>
@@ -72,4 +78,5 @@
 </main>
 </div>
 <div id="result-modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="modal-card"><div class="modal-header"><h3 id="modal-title">Escolha o equipamento</h3><button id="modal-close" class="button minimal">✕</button></div><div id="modal-choices" class="modal-choices"></div></div></div>
-<script src="/assets/app.js"></script></body></html>
+<script src="/assets/app.js?v=12.4.1"></script>
+<script src="/assets/github_controls.js?v=12.4.1"></script></body></html>

@@ -1,0 +1,29 @@
+BOOK PODA 12.4.0 - NOVA MODALIDADE LIMPEZA DE FAIXA
+====================================================
+
+1. Abra Novo Book -> Tipo de serviço: Limpeza de Faixa.
+2. Equipe exibida automaticamente: ENG LFCG02.
+3. Preencha OS e Data; selecione a unidade m² ou km.
+4. Informe a medição total ou informe a medição em cada trecho.
+5. Em cada trecho: localização, fotos ANTES/DEPOIS e, opcionalmente,
+   medição do trecho. Se todos os trechos tiverem medição, o total será somado.
+6. Clique em Gerar PDF e salvar Book.
+
+PDF: BOOK-ENG-LFCG02-[OS]-[ANO].pdf
+FOTOS: FOTOS-LFCG02-[OS]-[ANO]
+EXEMPLO: Books/2026/10 - Outubro/BOOK-ENG-LFCG02-008398-2026.pdf
+
+Poda continua exatamente no modo original, com quantidade inteira e
+BOOK-ENG-PDCG02-[OS]-[ANO].pdf.
+
+IMPORTANTE: Não foi definido um prefixo de OS específico para Limpeza
+ de Faixa. Em Configurações -> Prefixo da OS para Limpeza de Faixa
+ (opcional), você poderá informar o correto. Deixando vazio, no PDF
+ aparece só o número da OS. O prefixo da Poda não é reutilizado.
+
+A troca de m² para km NÃO converte os valores: o programa pede
+confirmação para limpar as medições antigas e digitar valores novos.
+
+Ao atualizar usando APLICAR_CORRECAO.bat, feche antes o servidor.
+O instalador substitui somente arquivos do código. Não remove
+Dados, Books, fotos, bases QField, configurações ou ambiente .venv.

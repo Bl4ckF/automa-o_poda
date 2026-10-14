@@ -1,38 +1,15 @@
-# Book Poda — arquivos gerados e dados locais
-# Books, PDFs e fotos devem ficar no computador, nao no GitHub.
-/Books/
-/Book/
-/books/
-
-# Historico, configuracoes locais e banco SQLite
-/Dados/
-
-# Bases QField e dados geograficos pesados
-/Bases QField/
-/web/qfield_tiles/
-/web/qfield_manifest.js
-/qfield_equipment_index.json
+# Dados operacionais e confidenciais (nao enviar ao repositorio publico)
+Dados/
+Books/
+Bases QField/
+.venv/
+__pycache__/
+*.pyc
 *.gpkg
 *.qgz
-
-# Ambientes virtuais e caches Python
-/.venv/
-/venv/
-__pycache__/
-*.py[cod]
-.pytest_cache/
-
-# Saidas de build/release e arquivos temporarios
-/dist/
-/build/
+qfield_equipment_index.json
+web/qfield_tiles/
+web/qfield_manifest.js
+dist/
 *.log
 *.sqlite3
-*.sqlite3-journal
-*.sqlite3-wal
-*.sqlite3-shm
-*.tmp
-
-# Arquivos locais sensiveis
-.env
-.env.*
-!.env.example

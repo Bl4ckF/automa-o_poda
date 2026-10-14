@@ -12,6 +12,7 @@ import threading
 import urllib.request
 import uuid
 from pathlib import Path
+from decimal import Decimal, InvalidOperation
 from PIL import Image, ImageOps
 from pyproj import CRS, Transformer
 from reportlab.pdfgen import canvas
@@ -30,12 +31,20 @@ SHEET_ID='1sQ5ciyk_GMzYrcug6EHDWQR9v_RZgXVPIGaO1X0L5Zw'
 MONTHS=('Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro')
 LOCK=threading.RLock()
 EQUIPMENT=None
+BOOK_TYPES={'poda':{'name':'Poda','team':'ENG PDCG02','filename_team':'ENG-PDCG02'},
+            'limpeza_faixa':{'name':'Limpeza de Faixa','team':'ENG LFCG02','filename_team':'ENG-LFCG02'}}
+MEASURE_UNITS={'m2':'m²','km':'km'}
 
 def setup():
     DATA.mkdir(parents=True, exist_ok=True); UPLOADS.mkdir(parents=True, exist_ok=True)
     with sqlite3.connect(BOOKS_DB) as db:
         db.execute('CREATE TABLE IF NOT EXISTS books (id INTEGER PRIMARY KEY AUTOINCREMENT, os TEXT NOT NULL, data TEXT NOT NULL, qtd INTEGER NOT NULL, filename TEXT NOT NULL, path TEXT NOT NULL, created TEXT NOT NULL, payload TEXT NOT NULL)')
+        # Migração não destrutiva: os Books antigos continuam identificados como Poda.
+        cols={r[1] for r in db.execute('PRAGMA table_info(books)').fetchall()}
+        if 'tipo' not in cols: db.execute("ALTER TABLE books ADD COLUMN tipo TEXT NOT NULL DEFAULT 'poda'")
+        if 'unidade' not in cols: db.execute("ALTER TABLE books ADD COLUMN unidade TEXT NOT NULL DEFAULT 'un'")
         db.execute('CREATE INDEX IF NOT EXISTS idx_os ON books(os)')
+        db.execute('CREATE INDEX IF NOT EXISTS idx_tipo ON books(tipo)')
         if db.execute('SELECT COUNT(*) FROM books').fetchone()[0]==0:
             old=Path.home()/'BookPodaRegistros.json'
             if old.exists():
@@ -47,7 +56,7 @@ def setup():
                 except (ValueError,OSError,TypeError): pass
 
 def get_settings():
-    default={'output_dir':str(BASE/'Books'),'prestador':'ENGELMIG ELÉTRICA LTDA','os_prefix':'ENG-PDBT02.CMAD','github_repo':''}
+    default={'output_dir':str(BASE/'Books'),'prestador':'ENGELMIG ELÉTRICA LTDA','os_prefix':'ENG-PDBT02.CMAD','os_prefix_faixa':'','github_repo':''}
     try: default.update(json.loads(CONFIG.read_text(encoding='utf-8')))
     except (OSError,ValueError): pass
     return default
@@ -65,6 +74,10 @@ def set_settings(settings):
             t=str(settings[k]).strip()
             if not t or len(t)>80:raise ValueError(f'Valor inválido para {k}.')
             prev[k]=t
+    if 'os_prefix_faixa' in settings:
+        t=str(settings['os_prefix_faixa']).strip()
+        if len(t)>80:raise ValueError('Prefixo da OS de Limpeza de Faixa muito longo.')
+        prev['os_prefix_faixa']=t
     CONFIG.write_text(json.dumps(prev,indent=2,ensure_ascii=False),encoding='utf-8')
     return prev
 
@@ -220,12 +233,40 @@ def _image_fit(c,path,x,y,w,h):
             c.drawImage(ImageReader(im),x+(w-iw*scale)/2,y+(h-ih*scale)/2,iw*scale,ih*scale)
     except Exception:pass
 
-def make_pdf(path,osn,date,qtd,recs,prestador):
+def format_measure(value):
+    """Formata medição decimal sem remover casas necessárias (padrão brasileiro)."""
+    v=Decimal(str(value))
+    compact=format(v.normalize(),'f')
+    a,point,dec=compact.partition('.')
+    prefix='-' if a.startswith('-') else ''
+    a=a.lstrip('-')
+    chunks=[]
+    while a:
+        chunks.append(a[-3:]);a=a[:-3]
+    return prefix+'.'.join(reversed(chunks))+(','+dec if point else '')
+
+def parse_measure(value):
+    raw=str(value if value is not None else '').strip().replace(' ', '')
+    # Aceita 1234,5 ou 1234.5; não confunde separador de milhar.
+    if ',' in raw and '.' in raw:
+        raw=raw.replace('.','').replace(',','.') if raw.rfind(',')>raw.rfind('.') else raw.replace(',','')
+    else: raw=raw.replace(',','.')
+    try: v=Decimal(raw)
+    except (InvalidOperation,ValueError): raise ValueError('Medição inválida. Exemplos: 1500,5 ou 1.25.')
+    if not v.is_finite() or not Decimal('0')<v<=Decimal('1000000000'):
+        raise ValueError('A medição deve ser maior que zero.')
+    if v.as_tuple().exponent < -4:
+        raise ValueError('Use no máximo quatro casas decimais para a medição.')
+    return v
+
+def make_pdf(path,osn,date,qtd,recs,prestador,book_type='poda',unit='un'):
+    is_faixa=book_type=='limpeza_faixa'
     W,H=A4;L=8;R=W-8;T=H-8;split=L+(R-L)*.605;title=22;rh=22
     c=canvas.Canvas(str(path),pagesize=A4)
     for row in recs:
         c.rect(L,L,R-L,T-L);a=T-title;c.line(L,a,R,a)
-        _text(c,(L+R)/2,a+6,'Book fotográfico',12,True,True)
+        title_string='Book fotográfico - Limpeza de Faixa' if is_faixa else 'Book fotográfico'
+        _text(c,(L+R)/2,a+6,title_string,12,True,True)
         b=a-rh;c.line(L,b,R,b)
         _text(c,L+25,b+7,'OS:',9,True)
         _text(c,L+55,b+7,osn,9,True,maxwidth=split-L-55)
@@ -233,8 +274,16 @@ def make_pdf(path,osn,date,qtd,recs,prestador):
         _text(c,R-105,b+7,date,9,True)
         y=b-rh;c.line(L,y,R,y);c.line(split,b,split,y)
         _text(c,L+15,y+7,f'PRESTADOR: {prestador}',9,True,maxwidth=split-L-25)
-        _text(c,split+12,y+7,'QNT DE PODAS:',9,True)
-        _text(c,split+125,y+7,str(qtd),9,True)
+        if is_faixa:
+            _text(c,split+11,y+7,'MEDIÇÃO:',8,True)
+            _text(c,split+87,y+7,format_measure(qtd)+' '+MEASURE_UNITS[unit],9,True,maxwidth=R-split-94)
+            ny=y-rh;c.line(L,ny,R,ny);c.line(split,y,split,ny)
+            _text(c,L+15,ny+7,'EQUIPE: ENG LFCG02',9,True)
+            _text(c,split+11,ny+7,'UNIDADE: '+MEASURE_UNITS[unit],9,True)
+            y=ny
+        else:
+            _text(c,split+12,y+7,'QNT DE PODAS:',9,True)
+            _text(c,split+125,y+7,str(qtd),9,True)
         sec=(y-L)/2
         for k,(lab,img) in enumerate((('ANTES:',row['antes']),('DEPOIS:',row['depois']))):
             top=y-k*sec;bot=y-(k+1)*sec;hh=18
@@ -243,9 +292,13 @@ def make_pdf(path,osn,date,qtd,recs,prestador):
             _text(c,(split+R)/2,top-hh+5,'OBSERVAÇÃO',9,True,True)
             _image_fit(c,img,L+3,bot+3,split-L-6,top-hh-bot-6)
             cx=(split+R)/2
-            labels=(lab,'RELIGADOR:','TD:','BAIRRO:','RUA/AVENIDA:','COORDENADAS:')
-            values=('',row.get('rd',''),row.get('td',''),row.get('bairro',''),row.get('rua',''),row.get('coord',''))
-            positions=(top-hh-16,top-hh-48,top-hh-92,top-hh-137,top-hh-182,top-hh-227)
+            labels=[lab,'RELIGADOR:','TD:','BAIRRO:','RUA/AVENIDA:','COORDENADAS:']
+            values=['',row.get('rd',''),row.get('td',''),row.get('bairro',''),row.get('rua',''),row.get('coord','')]
+            positions=[top-hh-16,top-hh-48,top-hh-92,top-hh-137,top-hh-182,top-hh-227]
+            if is_faixa and row.get('measure'):
+                labels.append('MEDIÇÃO DO TRECHO:')
+                values.append(format_measure(row['measure'])+' '+MEASURE_UNITS[unit])
+                positions.append(top-hh-268)
             for yy,lb,v in zip(positions,labels,values):
                 _text(c,cx,yy,lb,9,True,True)
                 if v:_text(c,cx,yy-13,v,7,False,True,maxwidth=R-split-10)
@@ -262,20 +315,38 @@ def local_media(ref):
 
 def create_book(payload):
     with LOCK:
+        book_type=str(payload.get('book_type') or 'poda').strip()
+        if book_type not in BOOK_TYPES: raise ValueError('Tipo de Book não reconhecido.')
+        is_faixa=book_type=='limpeza_faixa'
+        unit=str(payload.get('unit') or ('m2' if is_faixa else 'un')).strip()
+        if is_faixa and unit not in MEASURE_UNITS:raise ValueError('Selecione a unidade m² ou km.')
+        if not is_faixa:unit='un'
         date=date_parse(payload.get('date',''));day=date.strftime('%d/%m/%Y')
         osn=normalize_os(payload.get('os',''))
         recs=payload.get('records',[])
-        if not isinstance(recs,list) or not 1<=len(recs)<=200:raise ValueError('Adicione de 1 a 200 registros de poda.')
-        qtd=int(payload.get('qtd') or len(recs))
-        if qtd<1:raise ValueError('Informe a quantidade de podas.')
+        if not isinstance(recs,list) or not 1<=len(recs)<=200:
+            raise ValueError('Adicione de 1 a 200 evidências fotográficas.')
+        if is_faixa:
+            measurements=[parse_measure(r.get('measure')) for r in recs if isinstance(r,dict) and str(r.get('measure','')).strip()]
+            total_measure=sum(measurements,Decimal(0))
+            raw_total=payload.get('qtd')
+            if str(raw_total if raw_total is not None else '').strip():
+                qtd=parse_measure(raw_total)
+                if len(measurements)==len(recs) and qtd!=total_measure:
+                    raise ValueError('O total informado é diferente da soma das medições dos trechos.')
+            elif len(measurements)==len(recs): qtd=total_measure
+            else: raise ValueError('Informe a medição total ou a medição de todos os trechos.')
+        else:
+            try:qtd=int(payload.get('qtd') or len(recs))
+            except (TypeError,ValueError):raise ValueError('Quantidade de podas inválida.')
+            if qtd<1:raise ValueError('Informe a quantidade de podas.')
         config=get_settings();year=str(date.year);month=f'{date.month:02d} - {MONTHS[date.month-1]}'
         folder=(Path(config['output_dir']).expanduser().resolve()/year/month)
         folder.mkdir(parents=True,exist_ok=True)
-        filename=f'BOOK-ENG-PDCG02-{osn}-{year}.pdf'
+        filename=f'BOOK-{BOOK_TYPES[book_type]["filename_team"]}-{osn}-{year}.pdf'
         target=folder/filename
-        if target.exists():raise FileExistsError(f'Já existe um Book para a OS {osn} em {year}/{month}. O PDF anterior não foi sobrescrito.')
-        # Fotos de um Book salvo ficam junto dele, evitando perda ao apagar rascunhos.
-        media_folder=folder/f'FOTOS-{osn}-{year}'
+        if target.exists():raise FileExistsError(f'Já existe um Book {BOOK_TYPES[book_type]["name"]} para a OS {osn} em {year}/{month}. O PDF não foi sobrescrito.')
+        media_folder=folder/(f'FOTOS-{osn}-{year}' if not is_faixa else f'FOTOS-LFCG02-{osn}-{year}')
         prepared=[];saved_refs=[]
         try:
             media_folder.mkdir(exist_ok=True)
@@ -284,14 +355,18 @@ def create_book(payload):
                 coord=str(row.get('coord','')).strip()
                 parse_coord(coord)
                 newrow={k:str(row.get(k,'')).strip() for k in ('coord','rua','bairro','td','rd')}
+                if is_faixa and str(row.get('measure','')).strip():
+                    newrow['measure']=str(parse_measure(row['measure']))
                 for side in ('antes','depois'):
                     src=local_media(str(row.get(side,'')))
-                    if src is None:raise ValueError('Cada registro precisa de foto ANTES e DEPOIS enviada ao sistema.')
+                    if src is None:raise ValueError('Cada evidência precisa das fotos ANTES e DEPOIS.')
                     dst=media_folder/(uuid.uuid4().hex+src.suffix.lower())
                     shutil.copyfile(src,dst);saved_refs.append(dst)
                     newrow[side]=str(dst)
                 prepared.append(newrow)
-            make_pdf(target,config['os_prefix']+' '+osn,day,qtd,prepared,config['prestador'])
+            prefix=config.get('os_prefix_faixa','') if is_faixa else config['os_prefix']
+            os_display=(prefix+' ' if prefix else '')+osn
+            make_pdf(target,os_display,day,qtd,prepared,config['prestador'],book_type,unit)
         except Exception:
             if target.exists():target.unlink()
             for p in saved_refs:p.unlink(missing_ok=True)
@@ -299,18 +374,20 @@ def create_book(payload):
             except OSError:pass
             raise
         now=dt.datetime.now().strftime('%d/%m/%Y %H:%M')
-        saved={'os':osn,'date':day,'qtd':qtd,'records':prepared}
+        saved={'os':osn,'date':day,'qtd':str(qtd) if is_faixa else qtd,'book_type':book_type,'unit':unit,'team':BOOK_TYPES[book_type]['team'],'records':prepared}
         with sqlite3.connect(BOOKS_DB) as db:
-            cur=db.execute('INSERT INTO books(os,data,qtd,filename,path,created,payload) VALUES(?,?,?,?,?,?,?)',
-                           (osn,day,qtd,filename,str(target),now,json.dumps(saved,ensure_ascii=False)))
+            cur=db.execute('INSERT INTO books(os,data,qtd,filename,path,created,payload,tipo,unidade) VALUES(?,?,?,?,?,?,?,?,?)',
+                           (osn,day,float(qtd) if is_faixa else qtd,filename,str(target),now,json.dumps(saved,ensure_ascii=False),book_type,unit))
             ident=cur.lastrowid
         DRAFT.write_text('{}',encoding='utf-8')
-        return {'id':ident,'os':osn,'date':day,'qtd':qtd,'filename':filename,'folder':str(folder),'relative_folder':f'{year}/{month}','pdf_url':f'/api/books/{ident}/pdf'}
+        return {'id':ident,'os':osn,'date':day,'qtd':saved['qtd'],'book_type':book_type,'unit':unit,
+                'team':saved['team'],'filename':filename,'folder':str(folder),
+                'relative_folder':f'{year}/{month}','pdf_url':f'/api/books/{ident}/pdf'}
 
 def list_books(search=''):
     with sqlite3.connect(BOOKS_DB) as db:
         db.row_factory=sqlite3.Row
-        q='SELECT id,os,data,qtd,filename,path,created FROM books'
+        q='SELECT id,os,data,qtd,filename,path,created,tipo,unidade FROM books'
         if search:rows=db.execute(q+' WHERE os LIKE ? ORDER BY id DESC LIMIT 300',(f'%{search}%',)).fetchall()
         else:rows=db.execute(q+' ORDER BY id DESC LIMIT 300').fetchall()
         return [dict(r) for r in rows]

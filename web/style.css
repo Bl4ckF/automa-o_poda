@@ -13,3 +13,25 @@
 .update-release.hidden{display:none}
 .update-release a{color:#0369a1;text-decoration:underline}
 .update-note{font-size:12px;color:#64748b;line-height:1.6;margin:0}
+
+.update-check-result{display:flex;align-items:center;gap:12px;flex-wrap:wrap;min-height:28px}
+.update-check-result a{font-size:12px;color:#0369a1;text-decoration:underline}
+.update-indicator{display:inline-block;border-radius:100px;font-weight:700;padding:6px 12px;font-size:12px;background:#f1f5f9;color:#475569}
+.update-indicator.ok{background:#dcfce7;color:#166534}
+.update-indicator.warn{background:#fef3c7;color:#92400e}
+.update-indicator.error{background:#fee2e2;color:#991b1b}
+.update-indicator.pending{background:#dbeafe;color:#1d4ed8}
+
+/* Book Poda v12.4 - Tipos de serviço / Limpeza de Faixa */
+.service-selector{display:flex;align-items:center;gap:24px;padding:15px 22px;margin-bottom:13px;background:linear-gradient(120deg,#f7fcf9,#fff)}
+.service-selector>div:first-child{min-width:230px;max-width:320px;flex:1}
+.service-selector select{font-weight:700;color:#205a3e}
+.team-info{display:flex;flex-direction:column;gap:4px;flex:1}
+.team-info small,.team-info span{color:#748392;font-size:12px}
+.team-info strong{color:#0c7445;font-size:16px}
+.metric-control{display:flex;gap:6px;align-items:stretch}
+.metric-control input{min-width:0;flex:1}
+.metric-control select{width:80px;min-width:70px;flex:0 0 80px;padding-left:9px}
+.field-hint{display:block;color:#80909f;font-size:11px;line-height:1.4;margin-top:7px;font-weight:400}
+.history-team{display:block;color:#8493a1;font-size:11px;margin-top:3px}
+@media(max-width:780px){.service-selector{flex-wrap:wrap;gap:10px}.service-selector>div:first-child{max-width:none;width:100%}}

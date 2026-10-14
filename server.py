@@ -26,7 +26,7 @@ LOG=core.DATA/'servidor.log'
 UPDATE_LOCK=threading.Lock()
 
 class Handler(BaseHTTPRequestHandler):
-    server_version='BookPodaLocal/12.3'
+    server_version='BookPodaLocal/12.4.1'
     def log_message(self,fmt,*args):
         logging.info('%s '+fmt,self.client_address[0],*args)
 
@@ -70,12 +70,15 @@ class Handler(BaseHTTPRequestHandler):
         url=urlparse(self.path);p=unquote(url.path);query=parse_qs(url.query)
         if p=='/api/health':return self._json({'ok':True,'server':'Book Poda Localhost','version':updates.version_string(),'equipment':len(core.equipment().rows)})
         if p=='/api/update/status':
-            repo=core.get_settings().get('github_repo','')
+            repo=updates.read_repository(core.get_settings().get('github_repo',''))
             f=status_file()
             try: last=json.loads(f.read_text(encoding='utf-8'))
             except (OSError,ValueError):last={'state':'idle'}
-            return self._json({'version':updates.version_string(),'repo':repo,'last':last})
-        if p=='/api/settings':return self._json(core.get_settings())
+            return self._json({'version':updates.version_string(),'repo':repo,'last':last,'repository_saved':updates.REPO_FILE.exists()})
+        if p=='/api/settings':
+            cfg=core.get_settings()
+            cfg['github_repo']=updates.read_repository(cfg.get('github_repo',''))
+            return self._json(cfg)
         if p=='/api/draft':return self._json(core.load_draft())
         if p=='/api/search':return self._json(core.search_location(query.get('q',[''])[0]))
         if p=='/api/lookup':return self._json(core.lookup_coord(query.get('coord',[''])[0]))
@@ -137,21 +140,27 @@ class Handler(BaseHTTPRequestHandler):
             if p=='/api/update/repository':
                 payload=self._payload(4096)
                 repo=updates.parse_repo(payload.get('repo',''))
-                cfg=core.get_settings();cfg['github_repo']=repo
-                core.CONFIG.parent.mkdir(parents=True,exist_ok=True)
-                core.CONFIG.write_text(json.dumps(cfg,ensure_ascii=False,indent=2),encoding='utf-8')
-                return self._json({'ok':True,'repo':repo})
+                saved=updates.save_repository(repo)
+                logging.info('REPOSITORY SAVED: %s', saved)
+                return self._json({'ok':True,'repo':saved,'persisted':True})
+            if p=='/api/update/test':
+                payload=self._payload(4096)
+                # Se houver entrada no formulário, testa exatamente aquela entrada.
+                # O teste não altera o repositório salvo.
+                typed=payload.get('repo','')
+                repo=updates.parse_repo(typed) if typed else updates.read_repository(core.get_settings().get('github_repo',''))
+                return self._json(updates.probe_repository(repo))
             if p=='/api/update/check':
-                self._payload(4096)
-                repo=core.get_settings().get('github_repo','')
-                if not repo:raise ValueError('Configure primeiro o endereço do repositório GitHub.')
-                return self._json(updates.public_release(updates.latest_release(repo)))
+                payload=self._payload(4096)
+                typed=payload.get('repo','')
+                repo=updates.parse_repo(typed) if typed else updates.read_repository(core.get_settings().get('github_repo',''))
+                return self._json(updates.check_updates(repo))
             if p=='/api/update/install':
                 self._payload(4096)
                 if not UPDATE_LOCK.acquire(blocking=False):
                     return self._json({'error':'Outra atualização já está sendo preparada.'},409)
                 try:
-                    repo=core.get_settings().get('github_repo','')
+                    repo=updates.read_repository(core.get_settings().get('github_repo',''))
                     if not repo:raise ValueError('Configure o repositório GitHub antes de atualizar.')
                     release=updates.latest_release(repo)
                     if not release['available']:

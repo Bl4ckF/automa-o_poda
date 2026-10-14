@@ -67,3 +67,17 @@ V12.3 - SISTEMA DE ATUALIZACAO DIRETA PELO GITHUB
 - Dados, Books, Bases QField e .venv preservados.
 - Reinicio automatico e relatorio de status na interface.
 - Publique novas releases com python tools/gerar_release.py e leia ATUALIZACOES_GITHUB.md.
+
+NOVO EM 12.4.0 - LIMPEZA DE FAIXA
+- Em Novo Book, selecione Tipo de servico: Limpeza de Faixa.
+- Equipe fixa da modalidade: ENG LFCG02.
+- Escolha uma unidade para o Book inteiro: m2 (m²) ou km.
+- Informe a medicao total ou informe a medicao em cada trecho (somada automaticamente).
+  Decimais aceitam ponto ou virgula; nao ha conversao automatica entre unidades.
+- Registre coordenadas e fotos ANTES/DEPOIS por trecho. Cada trecho gera uma pagina.
+- PDF: BOOK-ENG-LFCG02-[OS]-[ANO].pdf
+- Fotos: FOTOS-LFCG02-[OS]-[ANO]. Books seguem a mesma pasta Ano/Mes.
+- Prefixo OS para Limpeza de Faixa fica separado nas Configuracoes e, inicialmente,
+  fica vazio por nao ter sido informado um prefixo oficial para este servico.
+- Historico de Poda e Limpeza de Faixa funciona junto, sem excluir registros.
+- A planilha Google Sheets 21307/21308 continua exclusiva da modalidade Poda.

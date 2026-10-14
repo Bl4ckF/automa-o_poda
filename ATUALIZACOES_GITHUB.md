@@ -60,3 +60,13 @@ publicado seja seguro. O botão requer confirmação antes de instalar.
 - Não atualiza automaticamente sem confirmação.
 - Repositórios privados ainda não são suportados.
 - Se o processo de atualização falhar, abra `INICIAR_LOCALHOST.bat` novamente e consulte o status em Configurações.
+
+
+## Correção v12.3.1
+
+- Repositório padrão: `Bl4ckF/automa-o_poda`.
+- Repositório salvo atomicamente em `Dados/github_repo.json`, separado de `Dados/config.json`.
+- Compatível com endereços terminados em `.git`.
+- Botão de verificação mostra progresso e explica quando não existem Releases.
+- Para publicar esta correção oficialmente, use a tag `v12.3.1`.
+- Instalação manual da correção: feche o servidor; substitua apenas os arquivos de programa, não apague `Dados` nem `Books`.
